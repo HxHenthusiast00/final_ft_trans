@@ -3,18 +3,26 @@ class AiComponent extends HTMLElement {
         super();
         this.canvas = null;
         this.ctx = null;
-        this.ball = { x: 500, y: 250, radius: 10, dx: 5, dy: 5 };
+        this.ball = { 
+            x: 500, 
+            y: 250, 
+            radius: 10, 
+            dx: 5, 
+            dy: 5,
+            speed: 5
+        };
         this.paddle1 = { x: 10, y: 200, width: 10, height: 120 };  // Player
         this.paddle2 = { x: 980, y: 200, width: 10, height: 120 }; // AI
         this.keys = {};
-        this.paddleSpeed = 7;
+        this.paddleSpeed = 14;
         this.score1 = 0;
         this.score2 = 0;
         this.playerName = '';
         this.gameStarted = false;
-        this.lastAIUpdate = 0;  // Timestamp for AI updates
-        this.predictedBallY = 250;  // AI's prediction of where ball will be
-        this.difficultyLevel = 0.85; // AI win rate adjustment (85% accuracy)
+        this.lastAIUpdate = 0;
+        this.predictedBallY = 250;
+        this.difficultyLevel = 0.65;  // Reduced from 0.85 to 0.65 (65% accuracy)
+        this.hitCount = 0;
     }
 
     connectedCallback() {
@@ -74,38 +82,44 @@ class AiComponent extends HTMLElement {
 
     updateAI() {
         const now = Date.now();
-        // Only update AI decision once per second
-        if (now - this.lastAIUpdate >= 1000) {
+        // Increased delay between AI updates to 1.5 seconds
+        if (now - this.lastAIUpdate >= 1500) {
             this.predictBallPosition();
             this.lastAIUpdate = now;
         }
 
-        // Move paddle towards predicted position with human-like constraints
+        // Move paddle towards predicted position with more human-like constraints
         const paddleCenter = this.paddle2.y + this.paddle2.height / 2;
         const targetY = this.predictedBallY;
 
-        // Add some randomness to make it less perfect
-        const randomError = (Math.random() - 0.5) * 30 * (1 - this.difficultyLevel);
+        // Increased random error for less accuracy
+        const randomError = (Math.random() - 0.5) * 100 * (1 - this.difficultyLevel);
         const adjustedTargetY = targetY + randomError;
 
-        // Move paddle with speed constraints
-        if (Math.abs(paddleCenter - adjustedTargetY) > 10) { // Add dead zone for more human-like behavior
+        // Slower paddle speed for AI
+        const aiPaddleSpeed = this.paddleSpeed * 0.8;
+
+        // Larger dead zone for more human-like behavior
+        if (Math.abs(paddleCenter - adjustedTargetY) > 30) {
             if (paddleCenter < adjustedTargetY && this.paddle2.y < this.canvas.height - this.paddle2.height) {
-                this.paddle2.y += this.paddleSpeed;
+                this.paddle2.y += aiPaddleSpeed;
             } else if (paddleCenter > adjustedTargetY && this.paddle2.y > 0) {
-                this.paddle2.y -= this.paddleSpeed;
+                this.paddle2.y -= aiPaddleSpeed;
             }
         }
     }
 
     predictBallPosition() {
-        // Simple prediction logic considering ball's current trajectory
-        if (this.ball.dx > 0) { // Only predict when ball is moving towards AI
+        // Only predict when ball is moving towards AI and is in AI's half
+        if (this.ball.dx > 0 && this.ball.x > this.canvas.width / 2) {
             let futureX = this.ball.x;
             let futureY = this.ball.y;
             let futureDy = this.ball.dy;
             
-            // Simulate ball path
+            // Add more randomness to prediction
+            const predictionError = (Math.random() - 0.5) * 50;
+            
+            // Simulate ball path with less accuracy
             while (futureX < this.paddle2.x) {
                 futureX += this.ball.dx;
                 futureY += futureDy;
@@ -116,7 +130,7 @@ class AiComponent extends HTMLElement {
                 }
             }
             
-            this.predictedBallY = futureY;
+            this.predictedBallY = futureY + predictionError;
         }
     }
 
@@ -136,17 +150,36 @@ class AiComponent extends HTMLElement {
         this.ball.x += this.ball.dx;
         this.ball.y += this.ball.dy;
 
-        // Ball collision with top and bottom
-        if (this.ball.y - this.ball.radius < 0 || this.ball.y + this.ball.radius > this.canvas.height) {
+        // Ball collision with top and bottom walls
+        if (this.ball.y - this.ball.radius < 0) {
+            this.ball.y = this.ball.radius;
+            this.ball.dy *= -1;
+        } else if (this.ball.y + this.ball.radius > this.canvas.height) {
+            this.ball.y = this.canvas.height - this.ball.radius;
             this.ball.dy *= -1;
         }
 
-        // Ball collision with paddles
-        if (this.checkPaddleCollision(this.ball, this.paddle1) || 
-            this.checkPaddleCollision(this.ball, this.paddle2)) {
-            this.ball.dx *= -1;
-            // Add slight randomization to make gameplay more interesting
-            this.ball.dy += (Math.random() - 0.5) * 2;
+        // Check paddle collisions
+        if (this.checkPaddleCollision(this.ball, this.paddle1)) {
+            this.ball.x = this.paddle1.x + this.paddle1.width + this.ball.radius; // Prevent sticking
+            this.handlePaddleCollision(this.ball, this.paddle1);
+            this.hitCount++;
+            if (this.hitCount % 4 === 0 && Math.abs(this.ball.dx) < 10) {
+                const currentSpeed = Math.sqrt(this.ball.dx * this.ball.dx + this.ball.dy * this.ball.dy);
+                const speedIncrease = 0.5;
+                this.ball.dx *= (currentSpeed + speedIncrease) / currentSpeed;
+                this.ball.dy *= (currentSpeed + speedIncrease) / currentSpeed;
+            }
+        } else if (this.checkPaddleCollision(this.ball, this.paddle2)) {
+            this.ball.x = this.paddle2.x - this.ball.radius; // Prevent sticking
+            this.handlePaddleCollision(this.ball, this.paddle2);
+            this.hitCount++;
+            if (this.hitCount % 4 === 0 && Math.abs(this.ball.dx) < 10) {
+                const currentSpeed = Math.sqrt(this.ball.dx * this.ball.dx + this.ball.dy * this.ball.dy);
+                const speedIncrease = 0.5;
+                this.ball.dx *= (currentSpeed + speedIncrease) / currentSpeed;
+                this.ball.dy *= (currentSpeed + speedIncrease) / currentSpeed;
+            }
         }
 
         // Score points
@@ -166,18 +199,44 @@ class AiComponent extends HTMLElement {
         }
     }
 
-    checkPaddleCollision(ball, paddle) {
-        return (ball.x - ball.radius < paddle.x + paddle.width &&
-                ball.x + ball.radius > paddle.x &&
-                ball.y + ball.radius > paddle.y &&
-                ball.y - ball.radius < paddle.y + paddle.height);
-    }
-
     resetBall() {
         this.ball.x = this.canvas.width / 2;
         this.ball.y = this.canvas.height / 2;
-        this.ball.dx = (Math.random() > 0.5 ? 5 : -5);
-        this.ball.dy = (Math.random() - 0.5) * 6;
+        const speed = 5; // Reset to initial speed
+        const angle = (Math.random() - 0.5) * Math.PI / 4; // Random angle between -45 and 45 degrees
+        this.ball.dx = Math.cos(angle) * speed * (Math.random() > 0.5 ? 1 : -1);
+        this.ball.dy = Math.sin(angle) * speed;
+    }
+
+    checkPaddleCollision(ball, paddle) {
+        // Find the closest point to the ball within the paddle
+        let closestX = Math.max(paddle.x, Math.min(ball.x, paddle.x + paddle.width));
+        let closestY = Math.max(paddle.y, Math.min(ball.y, paddle.y + paddle.height));
+        
+        // Calculate the distance between the closest points and the ball's center
+        let distanceX = ball.x - closestX;
+        let distanceY = ball.y - closestY;
+        
+        // Check if the distance is less than the ball's radius
+        let distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+        return distanceSquared <= (ball.radius * ball.radius);
+    }
+
+    handlePaddleCollision(ball, paddle) {
+        // Calculate collision point relative to paddle center
+        const paddleCenter = paddle.y + paddle.height / 2;
+        const collisionPoint = ball.y - paddleCenter;
+        const normalizedCollisionPoint = collisionPoint / (paddle.height / 2);
+        
+        // Calculate new angle based on where the ball hits the paddle
+        // Maximum angle is 45 degrees (π/4 radians)
+        const maxAngle = Math.PI / 4;
+        const angle = normalizedCollisionPoint * maxAngle;
+        
+        // Set new velocity based on angle
+        const speed = Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
+        ball.dx = Math.cos(angle) * speed * (ball.dx > 0 ? -1 : 1);
+        ball.dy = Math.sin(angle) * speed;
     }
 
     updateScoreDisplay() {

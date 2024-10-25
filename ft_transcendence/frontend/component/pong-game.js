@@ -3,11 +3,11 @@ class PongGame extends HTMLElement {
         super();
         this.canvas = null;
         this.ctx = null;
-        this.ball = { x: 500, y: 250, radius: 10, dx: 5, dy: 5 };
+        this.ball = { x: 500, y: 250, radius: 10, dx: 8, dy: 8 };  // Increased from 5 to 8
         this.paddle1 = { x: 10, y: 200, width: 10, height: 120 };  
         this.paddle2 = { x: 980, y: 200, width: 10, height: 120 };  
         this.keys = {};
-        this.paddleSpeed = 7;
+        this.paddleSpeed = 9;  // Slightly increased from 7 to 9 to match faster ball
         this.score1 = 0;
         this.score2 = 0;
         this.player1Name = '';
@@ -134,35 +134,32 @@ class PongGame extends HTMLElement {
 
     update() {
         // Move paddles
-        if (this.keys['w'] && this.paddle1.y > 0) this.paddle1.y -= this.paddleSpeed;  // Move faster
-        if (this.keys['s'] && this.paddle1.y < this.canvas.height - this.paddle1.height) this.paddle1.y += this.paddleSpeed;  // Move faster
-        if (this.keys['ArrowUp'] && this.paddle2.y > 0) this.paddle2.y -= this.paddleSpeed;  // Move faster
-        if (this.keys['ArrowDown'] && this.paddle2.y < this.canvas.height - this.paddle2.height) this.paddle2.y += this.paddleSpeed;  // Move faster
-    
+        if (this.keys['w'] && this.paddle1.y > 0) this.paddle1.y -= this.paddleSpeed;
+        if (this.keys['s'] && this.paddle1.y < this.canvas.height - this.paddle1.height) this.paddle1.y += this.paddleSpeed;
+        if (this.keys['ArrowUp'] && this.paddle2.y > 0) this.paddle2.y -= this.paddleSpeed;
+        if (this.keys['ArrowDown'] && this.paddle2.y < this.canvas.height - this.paddle2.height) this.paddle2.y += this.paddleSpeed;
+
         // Move ball
-        let nextX = this.ball.x + this.ball.dx;
-        let nextY = this.ball.y + this.ball.dy;
-    
-        // Ball collision with top and bottom
-        if (nextY - this.ball.radius < 0 || nextY + this.ball.radius > this.canvas.height) {
+        this.ball.x += this.ball.dx;
+        this.ball.y += this.ball.dy;
+
+        // Ball collision with top and bottom walls
+        if (this.ball.y - this.ball.radius < 0) {
+            this.ball.y = this.ball.radius; // Prevent sticking to top
             this.ball.dy *= -1;
-            nextY = this.ball.y + this.ball.dy;
+        } else if (this.ball.y + this.ball.radius > this.canvas.height) {
+            this.ball.y = this.canvas.height - this.ball.radius; // Prevent sticking to bottom
+            this.ball.dy *= -1;
         }
-    
-        // Improved paddle collision detection (other code remains unchanged)
-        if (this.checkPaddleCollision(nextX, nextY, this.paddle1) || 
-            this.checkPaddleCollision(nextX, nextY, this.paddle2)) {
-            this.ball.dx *= -1;
-            this.ball.dy += (Math.random() - 0.5) * 2;
+
+        // Check paddle collisions
+        if (this.checkPaddleCollision(this.ball, this.paddle1)) {
+            this.ball.x = this.paddle1.x + this.paddle1.width + this.ball.radius; // Prevent sticking
+            this.handlePaddleCollision(this.ball, this.paddle1);
+        } else if (this.checkPaddleCollision(this.ball, this.paddle2)) {
+            this.ball.x = this.paddle2.x - this.ball.radius; // Prevent sticking
+            this.handlePaddleCollision(this.ball, this.paddle2);
         }
-    
-        // Update ball position
-        this.ball.x = nextX;
-        this.ball.y = nextY;
-    
-        // Ball out of bounds, score logic...
-    
-    
 
         // Ball out of bounds
         if (this.ball.x < 0) {
@@ -181,17 +178,50 @@ class PongGame extends HTMLElement {
         }
     }
 
-    checkPaddleCollision(nextX, nextY, paddle) {
-        return (nextX - this.ball.radius < paddle.x + paddle.width &&
-                nextX + this.ball.radius > paddle.x &&
-                nextY + this.ball.radius > paddle.y &&
-                nextY - this.ball.radius < paddle.y + paddle.height);
+    checkPaddleCollision(ball, paddle) {
+        // Find the closest point to the ball within the paddle
+        let closestX = Math.max(paddle.x, Math.min(ball.x, paddle.x + paddle.width));
+        let closestY = Math.max(paddle.y, Math.min(ball.y, paddle.y + paddle.height));
+        
+        // Calculate the distance between the closest points and the ball's center
+        let distanceX = ball.x - closestX;
+        let distanceY = ball.y - closestY;
+        
+        // Check if the distance is less than the ball's radius
+        let distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+        return distanceSquared <= (ball.radius * ball.radius);
     }
+
+    handlePaddleCollision(ball, paddle) {
+        // Calculate collision point relative to paddle center
+        const paddleCenter = paddle.y + paddle.height / 2;
+        const collisionPoint = ball.y - paddleCenter;
+        const normalizedCollisionPoint = collisionPoint / (paddle.height / 2);
+        
+        // Set new velocities
+        const speed = 8;  // Increased from 5 to 8
+        const maxAngle = Math.PI / 4; // 45 degrees max angle
+        const angle = normalizedCollisionPoint * maxAngle;
+        
+        // Determine direction based on which paddle was hit
+        const direction = (paddle === this.paddle1) ? 1 : -1;
+        
+        // Update ball velocities
+        ball.dx = Math.cos(angle) * speed * direction;
+        ball.dy = Math.sin(angle) * speed;
+    }
+
     resetBall() {
         this.ball.x = this.canvas.width / 2;
         this.ball.y = this.canvas.height / 2;
-        this.ball.dx = -this.ball.dx;
+        
+        // Reset with a random angle between -45 and 45 degrees
+        const speed = 8;  // Increased from 5 to 8
+        const angle = (Math.random() - 0.5) * Math.PI / 4;
+        this.ball.dx = Math.cos(angle) * speed * (Math.random() > 0.5 ? 1 : -1);
+        this.ball.dy = Math.sin(angle) * speed;
     }
+
 
     updateScoreDisplay() {
         const player1ScoreElement = this.querySelector('#player1Score');
